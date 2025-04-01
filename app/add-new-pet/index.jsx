@@ -3,23 +3,24 @@ import React, { useEffect, useState } from 'react'
 import { useNavigation, useRouter } from 'expo-router'
 import Colors from '../../constants/Colors';
 import { Picker } from '@react-native-picker/picker';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../config/FirebaseConfig';
+import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
+import { db, storage } from '../../config/FirebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { ActivityIndicator } from 'react-native-web';
+import { ActivityIndicator } from 'react-native';
+import { useUser } from "@clerk/clerk-expo";
 
 export default function AddNewPet() {
   const navigation = useNavigation();
   const [formData, setFormData] = useState(
-    {category:'Dogs',sex:'Male'}
+    { category: 'Dogs', sex: 'Male' }
   );
   const [gender, setGender] = useState();
   const [categoryList, setCategoryList] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState();
   const [image, setImage] = useState();
-  const[loader,setLoader] = useState(false);
-  const {user} = useUser();
+  const [loader, setLoader] = useState(false);
+  const { user } = useUser();
   const router = useRouter();
 
   useEffect(() => {
@@ -65,46 +66,59 @@ export default function AddNewPet() {
   };
 
   const onSubmit = () => {
-    if(Object.keys(formData).length !=8)
-      {
-        ToastAndroid.show('Enter all Details', ToastAndroid.SHORT)
-      return ;
+    if (Object.keys(formData).length != 8) {
+      ToastAndroid.show('Enter all Details', ToastAndroid.SHORT)
+      return;
     }
-    
+
     UploadImage();
   };
-  const UploadImage =async()=>{
 
-    setLoader(true);
-      const resp =await fetch(image);
+  const UploadImage = async () => {
+    try {
+      if (!image) {
+        ToastAndroid.show('Please select an image', ToastAndroid.SHORT);
+        setLoader(false);
+        return;
+      }
+
+      setLoader(true);
+      const resp = await fetch(image);
       const blobImage = await resp.blob();
-      const storageRef = ref(storage,'/PetAdopt/' + Date.now() + '.jpg');
+      const storageRef = ref(storage, '/PetAdopt/' + Date.now() + '.jpg');
 
-      uploadBytes(storageRef,blobImage).then((snapshot)=>{
-        console.log('File Uploaded')
-      }).then(resp=>{
-        getDownloadURL(storageRef).then(async(downloadUrl)=>{
-          console.log(downloadUrl);
-          SaveFormData(downloadUrl)
-        })
-      })
+      await uploadBytes(storageRef, blobImage);
+      console.log('File Uploaded');
 
+      const downloadUrl = await getDownloadURL(storageRef);
+      console.log(downloadUrl);
+      await SaveFormData(downloadUrl);
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      ToastAndroid.show('Failed to upload image', ToastAndroid.SHORT);
+      setLoader(false);
+    }
+  };
 
-  }
-  const SaveFormData = async(imageUrl)=>{
-    const docId = Date.now().toString();
-    await setDoc(doc(db, 'Pets', docId),{
-      ...formData,
-      imageUrl: imageUrl,
-      username: user?.fullName,
-      eamail: user?.primaryEmailAddress?.emailAddress,
-      userImage : user?.imageUrl,
-      id: docId
-    })
-    setLoader(false);
-    router.replace('/(tabs)/home')
-
-  }
+  const SaveFormData = async (imageUrl) => {
+    try {
+      const docId = Date.now().toString();
+      await setDoc(doc(db, 'Pets', docId), {
+        ...formData,
+        imageUrl: imageUrl,
+        username: user?.fullName,
+        email: user?.primaryEmailAddress?.emailAddress,
+        userImage: user?.imageUrl,
+        id: docId,
+      });
+      setLoader(false);
+      router.replace('/(tabs)/home');
+    } catch (error) {
+      console.error('Error saving form data:', error);
+      ToastAndroid.show('Failed to save data', ToastAndroid.SHORT);
+      setLoader(false);
+    }
+  };
 
   return (
     <ScrollView style={{
@@ -116,7 +130,7 @@ export default function AddNewPet() {
       }}>Add New Pet for adoption</Text>
 
       <Pressable onPress={imagePicker}>
-        {!image? <Image source={image ? { uri: image } : require('./../../assets/images/placeholder.png')}
+        {!image ? <Image source={image ? { uri: image } : require('./../../assets/images/placeholder.png')}
           style={{
             width: 100,
             height: 100,
@@ -124,15 +138,15 @@ export default function AddNewPet() {
             borderWidth: 1,
             borderColor: Colors.GRAY
           }}
-        />:
-        <Image source={{uri: image}}
-        style={{
-            width: 100,
-            height: 100,
-            borderRadius: 15,
-            borderWidth: 1,
-            borderColor: Colors.GRAY
-          }}/>}
+        /> :
+          <Image source={{ uri: image }}
+            style={{
+              width: 100,
+              height: 100,
+              borderRadius: 15,
+              borderWidth: 1,
+              borderColor: Colors.GRAY
+            }} />}
       </Pressable>
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Pet Name*</Text>
@@ -207,14 +221,14 @@ export default function AddNewPet() {
           onChangeText={(value) => handleInputChange('about', value)}
         />
       </View>
-      <TouchableOpacity 
-      disabled={loader}
-      style={styles.button} 
-      onPress={onSubmit}>
-        {loader ?<ActivityIndicator size={'large'}/>:
-        <Text style={{ fontFamily: 'outfit-medium', textAlign: 'center' }}>Submit</Text>
+      <TouchableOpacity
+        disabled={loader}
+        style={styles.button}
+        onPress={onSubmit}>
+        {loader ? <ActivityIndicator size={'large'} /> :
+          <Text style={{ fontFamily: 'outfit-medium', textAlign: 'center' }}>Submit</Text>
         }
-        
+
       </TouchableOpacity>
     </ScrollView>
   )
